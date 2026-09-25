@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Analiză Vânzări & Încasări</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+
+    <style>
+        .chart-container { position: relative; height: 320px; width: 100%; }
+
+        @media print {
+            header, #uploadZone, #categorySelector, #slicerJudet, button, label {
+                display: none !important;
+            }
+            body {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+            }
+            .max-w-7xl {
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+            .shadow-sm {
+                box-shadow: none !important;
+                border: 1px solid #cbd5e1 !important;
+            }
+            .chart-container {
+                height: 280px !important;
+                page-break-inside: avoid;
+            }
+            .grid {
+                display: block !important;
+            }
+            .grid > * {
+                margin-bottom: 1.5rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-slate-900 text-white shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <div class="bg-blue-600 text-white p-2.5 rounded-2xl flex items-center justify-center shadow-md">
+                    <i class="fa-solid fa-chart-line text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight leading-tight">Analiza incasari</h1>
+                    <p class="text-xs text-slate-400 font-normal">Dashboard interactiv pentru vânzări și încasări</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <button onclick="window.print()" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                    <i class="fa-solid fa-file-pdf"></i> Export PDF
+                </button>
+                <input type="file" id="fileInput" accept=".csv, .xlsx, .xls" class="hidden" onchange="handleFileSelect(event)">
+                <button onclick="document.getElementById('fileInput').click()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2">
+                    <i class="fa-solid fa-file-import"></i> Încarcă Date
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+        <!-- Zona Upload -->
+        <div id="uploadZone" class="bg-white border-2 border-dashed border-slate-300 rounded-xl p-12 text-center hover:border-indigo-500 transition cursor-pointer" onclick="document.getElementById('fileInput').click()" ondragover="event.preventDefault()" ondrop="handleDrop(event)">
+            <i class="fa-solid fa-cloud-arrow-up text-5xl text-indigo-500 mb-4"></i>
+            <h3 class="text-lg font-semibold text-slate-700">Trage fișierul aici sau apasă pentru încărcare</h3>
+            <p class="text-sm text-slate-500 mt-1">Acceptă formate CSV, XLSX sau XLS</p>
+        </div>
+
+        <!-- Dashboard Content -->
+        <div id="dashboardGrid" class="hidden space-y-6">
+            
+            <!-- Zona de Controale / Slicer & Selector Categorie -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                
+                <!-- Slicer dedicat pentru Judet CP -->
+                <div class="flex items-center gap-3">
+                    <label for="slicerJudet" class="font-bold text-slate-700 text-sm whitespace-nowrap">
+                        <i class="fa-solid fa-location-dot text-indigo-500 mr-1"></i> Filtru Județ CP:
+                    </label>
+                    <select id="slicerJudet" onchange="applyFilters()" class="w-full p-2 border border-slate-300 rounded-md text-sm bg-slate-50 font-medium text-slate-800">
+                        <option value="">-- Toate Județele --</option>
+                    </select>
+                </div>
+
+                <!-- Selector Categorie Analizată în Grafice -->
+                <div class="flex items-center gap-3 justify-start md:justify-end">
+                    <label for="categorySelector" class="font-bold text-slate-700 text-sm whitespace-nowrap">
+                        <i class="fa-solid fa-chart-simple text-indigo-500 mr-1"></i> Dimensiune Grafice:
+                    </label>
+                    <select id="categorySelector" onchange="updateCategoryAnalytics()" class="p-2 border border-slate-300 rounded-md text-sm bg-slate-50 font-medium text-slate-800">
+                        <option value="Compart.">Compart.</option>
+                        <option value="Tip activitate">Tip activitate</option>
+                        <option value="Natura">Natura</option>
+                        <option value="OGC">OGC</option>
+                    </select>
+                </div>
+
+            </div>
+
+            <!-- KPI Cards -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Încasat (fără TVA)</span>
+                    <div id="kpiTotalIncasat" class="text-2xl font-black text-slate-800 mt-1">0,00 RON</div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Clienți Unici</span>
+                    <div id="kpiUniqueClients" class="text-2xl font-black text-indigo-600 mt-1">0</div>
+                </div>
+            </div>
+
+            <!-- Section 1: Top 10 Performeri (Bar) & Distribuție Procentuală (Donut) -->
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-bold text-slate-700 mb-3"><i class="fa-solid fa-ranking-star text-indigo-500 mr-2"></i>Top 10 Performeri</h3>
+                    <div class="chart-container"><canvas id="chartBar"></canvas></div>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-bold text-slate-700 mb-3"><i class="fa-solid fa-chart-pie text-indigo-500 mr-2"></i>Distribuție Procentuală (Top 5 + Altele)</h3>
+                    <div class="chart-container"><canvas id="chartDonut"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Section 2: TOP 5 CLIENȚI (Inlocuitorul graficului Pareto) -->
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <h3 class="text-sm font-bold text-slate-700 mb-3"><i class="fa-solid fa-user-tie text-emerald-600 mr-2"></i>Top 5 Clienți (Valoare Încasată)</h3>
+                <div class="chart-container"><canvas id="chartTopClients"></canvas></div>
+            </div>
+
+        </div>
+    </main>
+
+    <script>
+        let rawData = [];
+        let filteredData = [];
+        let chartInstances = {};
+
+        const COL_VALOARE = "Valoare Incasata fara TVA";
+        const COL_CLIENT = "ID client";
+        const COL_NAME = "Nume client";
+        const COL_JUDET = "Judet CP";
+
+        // Mappings și conversii numerice
+
+        function getRowValue(row, targetCol) {
+            if (!row || typeof row !== 'object') return "";
+            const cleanTarget = String(targetCol).toLowerCase().replace(/[^a-z0-9]/g, "");
+            const keys = Object.keys(row);
+            const matchedKey = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, "") === cleanTarget);
+            return matchedKey ? row[matchedKey] : "";
+        }
+
+        function parseRomanianNumber(val) {
+            if (typeof val === 'number') return isNaN(val) ? 0 : val;
+            if (val === null || val === undefined) return 0;
+            
+            let str = String(val).trim().replace(/\s/g, '').replace(/RON|LEI/gi, '');
+            if (!str) return 0;
+            
+            if (str.includes(',') && str.includes('.')) {
+                str = str.replace(/\./g, '').replace(',', '.');
+            } else if (str.includes(',')) {
+                str = str.replace(',', '.');
+            }
+            
+            const num = parseFloat(str);
+            return isNaN(num) ? 0 : num;
+        }
+
+        // Processing Fișiere
+
+        function handleFileSelect(e) { processFile(e.target.files[0]); }
+        function handleDrop(e) { e.preventDefault(); processFile(e.dataTransfer.files[0]); }
+
+        function processFile(file) {
+            if (!file) return;
+            const ext = file.name.split('.').pop().toLowerCase();
+            
+            if (ext === 'csv') {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    dynamicTyping: true,
+                    complete: (res) => loadData(res.data)
+                });
+            } else if (['xlsx', 'xls'].includes(ext)) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const wb = XLSX.read(data, { type: 'array' });
+                        const sheet = wb.Sheets[wb.SheetNames[0]];
+                        const json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+                        loadData(json);
+                    } catch (err) {
+                        alert("Eroare la citirea fișierului Excel: " + err.message);
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        }
+
+        function loadData(data) {
+            rawData = data;
+            document.getElementById('uploadZone').classList.add('hidden');
+            document.getElementById('dashboardGrid').classList.remove('hidden');
+            
+            populateJudetSlicer();
+            applyFilters();
+        }
+
+        // Slicer & Filtrare
+
+        function populateJudetSlicer() {
+            const slicer = document.getElementById('slicerJudet');
+            slicer.innerHTML = '<option value="">-- Toate Județele --</option>';
+            
+            const uniqueJudete = [...new Set(rawData.map(r => String(getRowValue(r, COL_JUDET)).trim()))]
+                .filter(v => v !== "" && v !== "undefined" && v !== "null")
+                .sort();
+
+            uniqueJudete.forEach(j => {
+                slicer.innerHTML += `<option value="${j}">${j}</option>`;
+            });
+        }
+
+        function applyFilters() {
+            const selectedJudet = document.getElementById('slicerJudet').value;
+
+            if (!selectedJudet) {
+                filteredData = [...rawData];
+            } else {
+                filteredData = rawData.filter(r => String(getRowValue(r, COL_JUDET)).trim() === selectedJudet);
+            }
+
+            renderKPIs();
+            updateCategoryAnalytics();
+        }
+
+        // Render KPI-uri
+
+        function renderKPIs() {
+            const totalIncasat = filteredData.reduce((acc, r) => {
+                return acc + parseRomanianNumber(getRowValue(r, COL_VALOARE));
+            }, 0);
+            
+            const uniqueClients = new Set(
+                filteredData
+                    .map(r => String(getRowValue(r, COL_CLIENT)).trim())
+                    .filter(c => c !== "" && c !== "null" && c !== "undefined")
+            ).size;
+
+            document.getElementById('kpiTotalIncasat').innerText = totalIncasat.toLocaleString('ro-RO', { style: 'currency', currency: 'RON' });
+            document.getElementById('kpiUniqueClients').innerText = uniqueClients;
+        }
+
+        // Generare Grafice
+
+        function updateCategoryAnalytics() {
+            const selectedCat = document.getElementById('categorySelector').value;
+            const catMap = {};
+            let grandTotal = 0;
+
+            filteredData.forEach(r => {
+                const rawCat = getRowValue(r, selectedCat);
+                const catVal = (rawCat !== "" && rawCat !== undefined && rawCat !== null) ? String(rawCat).trim() : 'Nespecificat';
+                const val = parseRomanianNumber(getRowValue(r, COL_VALOARE));
+                
+                catMap[catVal] = (catMap[catVal] || 0) + val;
+                grandTotal += val;
+            });
+
+            const sortedCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+
+            renderBarChart(sortedCats.slice(0, 10));
+            renderDonutChart(sortedCats, grandTotal);
+            renderTopClientsBarChart(); // Apelare grafic bare orizontale Top 5 Clienți
+        }
+
+        function renderBarChart(top10) {
+            if (chartInstances['chartBar']) chartInstances['chartBar'].destroy();
+
+            chartInstances['chartBar'] = new Chart(document.getElementById('chartBar'), {
+                type: 'bar',
+                data: {
+                    labels: top10.map(c => c[0]),
+                    datasets: [{
+                        label: 'Valoare Încasată (fără TVA)',
+                        data: top10.map(c => c[1]),
+                        backgroundColor: '#6366f1'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+        }
+
+        function renderDonutChart(sortedCats, grandTotal) {
+            if (chartInstances['chartDonut']) chartInstances['chartDonut'].destroy();
+
+            const top5 = sortedCats.slice(0, 5);
+            const othersSum = sortedCats.slice(5).reduce((acc, c) => acc + c[1], 0);
+            
+            const labels = top5.map(c => c[0]);
+            const dataPct = top5.map(c => grandTotal > 0 ? ((c[1] / grandTotal) * 100).toFixed(2) : 0);
+
+            if (othersSum > 0) {
+                labels.push('Altele');
+                dataPct.push(grandTotal > 0 ? ((othersSum / grandTotal) * 100).toFixed(2) : 0);
+            }
+
+            chartInstances['chartDonut'] = new Chart(document.getElementById('chartDonut'), {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: dataPct,
+                        backgroundColor: ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#94a3b8']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: (ctx) => `${ctx.label}: ${ctx.raw}%`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Grafic Bare Orizontale: Top 5 Clienți
+        function renderTopClientsBarChart() {
+            if (chartInstances['chartTopClients']) chartInstances['chartTopClients'].destroy();
+
+            const clientMap = {};
+
+            filteredData.forEach(r => {
+                let clientKey = String(getRowValue(r, COL_NAME)).trim();
+                if (!clientKey) {
+                    clientKey = String(getRowValue(r, COL_CLIENT)).trim();
+                }
+                if (!clientKey || clientKey === "null" || clientKey === "undefined") {
+                    clientKey = "Client Neidentificat";
+                }
+
+                const val = parseRomanianNumber(getRowValue(r, COL_VALOARE));
+                clientMap[clientKey] = (clientMap[clientKey] || 0) + val;
+            });
+
+            const top5Clients = Object.entries(clientMap)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 5);
+
+            chartInstances['chartTopClients'] = new Chart(document.getElementById('chartTopClients'), {
+                type: 'bar',
+                data: {
+                    labels: top5Clients.map(c => c[0]),
+                    datasets: [{
+                        label: 'Valoare Încasată (fără TVA)',
+                        data: top5Clients.map(c => c[1]),
+                        backgroundColor: '#10b981'
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: {
+                                callback: (value) => value.toLocaleString('ro-RO') + ' RON'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
