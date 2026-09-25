@@ -2,6 +2,10 @@
 
 O aplicație web modernă, rapidă și securizată pentru analiza financiară din fișiere Excel sau CSV. Proiectul rulează 100% în browser (*client-side*), fără a trimite datele către un server extern.
 
+![Interfață Dashboard](Screenshot%202026-09-25%20interfata_dasb.png)
+![Preview Dashboard](Screenshot%202026-09-25%20dashb_datefictive.png)
+
+
 🚀 **[Accesează Dashboard-ul Live Aici](https://madalinacalota-ghub.github.io/analiza-incasari-dashboard/)**
 
 ---
